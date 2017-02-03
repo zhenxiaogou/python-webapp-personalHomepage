@@ -41,3 +41,51 @@ class _ConnectionCtx(object):
 
 def connection():
 	return _ConnectionCtx()
+
+@with_connection
+def select(sql,*args):
+	pass
+
+@with_connection
+def update(sql,*args):
+	pass
+
+@with_transaction
+def do_in_transaction():
+	pass
+
+class _TransactionCtx(object):
+	def _enter_(self):
+		global _db_ctx
+		self.should_close_conn = False
+		if not _db_ctx.is_init():
+			_db_ctx.init()
+			self.should_close_conn = True
+		_db_ctx.transaction = _db_ctx.transacitons + 1
+		return self
+
+	def _exit(self,exctype,excvalue,traceback):
+		global _db_ctx
+		_db_ctx.transactions = _db_ctx.transactions - 1
+		try:
+			if _db_ctx.transactions = 0
+				if exctype is None:
+					self.commit()
+				else:
+					self.rollback()
+		finally:
+			if self.should_close_conn:
+				_db_ctx.cleanup()
+
+	def commit(self):
+		global _db_ctx
+		try:
+			_db_ctx.connection.commit()
+		except:
+			_db_ctx.connection.rollback()
+			raise
+
+	def rollback(self):
+		global _db_ctx
+		_db_ctx.connection.rollback()
+
