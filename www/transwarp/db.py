@@ -42,7 +42,6 @@
 """
 import functools
 import threading
-import logging
 
 #global engine object:
 engine = None
@@ -63,7 +62,6 @@ def create_engine(user,password,database,host,port = 3306,**kw):
 	params.update(kw)
 	params['buffered'] = True
 	engine = _Engine(lambda:mysql.connector.connect(**params))
-	logging.info('Init mysql engine <%s> ok.' % hex(id(engine)))
 
 class _Engine(object):
 	"""
@@ -179,7 +177,6 @@ def _select(sql,first,*args):
 	global _db_ctx
 	cursor = None
 	sql = sql.replace('?','%s')
-	logging.info('SQL: %s, ARGS: %s' % (sql, args))
 	try:
 		cursor = _db_ctx.connection.cursor()
 		cursor.execute(sql, args)
@@ -280,14 +277,12 @@ def _update(sql, *args):
 	global _db_ctx
 	cursor = None
 	sql = sql.replace('?', '%s')
-	logging.info('SQL: %s, ARGS: %s' % (sql, args))
 	try:
 		cursor = _db_ctx.connection.cursor()
 		cursor.execute(sql, args)
 		r = cursor.rowcount
 		if _db_ctx.transactions == 0:
 			# no transaction enviroment:
-			logging.info('auto commit')
 		_db_ctx.connection.commit()
 		return r
 	finally:
