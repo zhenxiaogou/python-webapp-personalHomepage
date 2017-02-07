@@ -407,5 +407,8 @@ class _TransactionCtx(object):
 		_db_ctx.connection.rollback()
 
 if __name__ == '__main__':
-	create_engine('root', 'Woshizhu!', 'python-web', '47.88.3.211')
+	"""
+	模块测试内容
+	"""
+	create_engine('user', 'password', 'database', 'host')
 	update('create table user (id int primary key, name text, email text, passwd text, last_modified real)')
