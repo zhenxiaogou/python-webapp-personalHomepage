@@ -185,7 +185,15 @@ class ModelMetaclass(type):
 			raise TypeError('Primary key not defined in class: %s' % name)
 		for k in mappings.iterkeys():
 			attrs.pop(k)
-			
+		if not '__table__' in attrs:
+			attrs['__table__'] = name.lower()
+		attrs['__mappings__'] = mappings
+		attrs['__primary_key__'] = primary_key
+		attrs['__sql__'] = lambda self:_gen_sql(attrs['__table__'],mappings)
+		for trigger in _triggers:
+			if not trigger in attrs:
+				attrs[trigger] = None
+		return type.__new__(cls,name,bases,attrs)
 
 class Field(object):
 	"""
@@ -302,6 +310,27 @@ class VersionField(Field):
 	"""
 	def __init__(self, name = None):
 		super(VersionField, self).__init__(name = name,default = 0,ddl = 'bigint')
+
+
+def _gen_sql(table_name, mappings):
+	"""
+	类 ==> 表时 生成创建表的sql
+	"""
+	pk = None
+	sql = ['-- generating SQL for %s:' % table_name, 'create table `%s` (' % table_name]
+	for f in sorted(mappings.values(), lambda x, y: cmp(x._order, y._order)):
+		if not hasattr(f, 'ddl'):
+			raise StandardError('no ddl in field "%s".' % f)
+		ddl = f.ddl
+		nullable = f.nullable
+		if f.primary_key:
+			pk = f.name
+		#sql.append(nullable and '  `%s` %s,' % (f.name, ddl) or '  `%s` %s not null,' % (f.name, ddl))
+		sql.append('  `%s` %s,' % (f.name, ddl) if nullable else '  `%s` %s not null,' % (f.name, ddl))
+	sql.append('  primary key(`%s`)' % pk)
+	sql.append(');')
+	return '\n'.join(sql)
+
 
 
 		
