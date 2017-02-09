@@ -42,6 +42,28 @@
 """
 import functools
 import threading
+import time
+import uuid
+import logging
+
+def next_id(t=None):
+	"""
+	生成一个唯一id   由 当前时间 + 随机数（由伪随机数得来）拼接得到
+	"""
+	if t is None:
+		t = time.time()
+	return '%015d%s000' % (int(t * 1000), uuid.uuid4().hex)
+
+
+def _profiling(start, sql=''):
+	"""
+	用于剖析sql的执行时间
+	"""
+	t = time.time() - start
+	if t > 0.1:
+		logging.warning('[PROFILING] [DB] %s: %s' % (t, sql))
+	else:
+		logging.info('[PROFILING] [DB] %s: %s' % (t, sql))
 
 #global engine object:
 engine = None
@@ -62,6 +84,8 @@ def create_engine(user,password,database,host,port = 3306,**kw):
 	params.update(kw)
 	params['buffered'] = True
 	engine = _Engine(lambda:mysql.connector.connect(**params))
+	logging.info('Init mysql engine <%s> ok.' % hex(id(engine)))
+
 
 class _Engine(object):
 	"""
@@ -83,7 +107,9 @@ class _DbCtx(threading.local):
 	def __init__(self): 
 		"""
 		__init__两个下划线不是一个下划线_init_
+		初始化连接的上下文对象,获得一个惰性连接
 		"""
+		logging.info('open lazy connection...')
 		self.connection = None
 		self.transactions = 0
 
@@ -113,6 +139,7 @@ class _LasyConnection(object):
 		def cursor(self):
 				if self.connection is None:
 					_connection = engine.connect()
+					logging.info('[CONNECTION] [OPEN] connection <%s>...' % hex(id(_connection)))
 					self.connection = _connection
 				return self.connection.cursor()
 
@@ -126,6 +153,7 @@ class _LasyConnection(object):
 			if self.connection:
 				_connection = self.connection
 				self.connection = None
+				logging.info('[CONNECTION] [CLOSE] connection <%s>...' % hex(id(connection)))
 				_connection.close()
 
 
@@ -177,6 +205,7 @@ def _select(sql,first,*args):
 	global _db_ctx
 	cursor = None
 	sql = sql.replace('?','%s')
+	logging.info('SQL: %s, ARGS: %s' % (sql, args))
 	try:
 		cursor = _db_ctx.connection.cursor()
 		cursor.execute(sql, args)
@@ -277,13 +306,15 @@ def _update(sql, *args):
 	global _db_ctx
 	cursor = None
 	sql = sql.replace('?', '%s')
+	logging.info('SQL: %s, ARGS: %s' % (sql, args))
 	try:
 		cursor = _db_ctx.connection.cursor()
 		cursor.execute(sql, args)
 		r = cursor.rowcount
 		if _db_ctx.transactions == 0:
 			# no transaction enviroment:
-		_db_ctx.connection.commit()
+			logging.info('auto commit')
+			_db_ctx.connection.commit()
 		return r
 	finally:
 		if cursor:
@@ -371,6 +402,7 @@ class _TransactionCtx(object):
 			_db_ctx.init()
 			self.should_close_conn = True
 		_db_ctx.transaction = _db_ctx.transacitons + 1
+		logging.info('begin transaction...' if _db_ctx.transactions == 1 else 'join current transaction...')
 		return self
 
 	def _exit_(self,exctype,excvalue,traceback):
@@ -391,19 +423,19 @@ class _TransactionCtx(object):
 
 	def commit(self):
 		global _db_ctx
+		logging.info('commit transaction...')
 		try:
 			_db_ctx.connection.commit()
+			logging.info('commit ok.')
 		except:
+			logging.warning('commit failed. try rollback...')
 			_db_ctx.connection.rollback()
+			logging.warning('rollback ok.')
 			raise
 
 	def rollback(self):
 		global _db_ctx
+		logging.warning('rollback transaction...')
 		_db_ctx.connection.rollback()
+		logging.info('rollback ok.')
 
-if __name__ == '__main__':
-	"""
-	模块测试内容
-	"""
-	create_engine('user', 'password', 'database', 'host')
-	update('create table user (id int primary key, name text, email text, passwd text, last_modified real)')

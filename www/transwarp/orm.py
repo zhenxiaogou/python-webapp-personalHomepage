@@ -36,6 +36,60 @@ import logging
 
 _triggers = frozenset(['pre_insert','pre_updata','pre_delete'])
 
+class ModelMetaclass(type):
+	"""
+	对类对象动态完成以下操作
+	避免修改model类:
+		1.排除对model类的修改
+	属性与字段的mapping:
+		1.从类的属性字典中提出 类属性和字段类 的mapping
+		2.提取完成后移除这些类属性,避免和实例属性冲突
+		3.新增"__mappings__"属性,保存提取出的mapping数据
+	类和表的mapping:
+		1.提取类名,保存为表名,完成简单的类和表映射
+		2.新增"__table__"属性,保存提取出的表名
+	"""
+	def __new__(cls,name,bases,attrs):
+		if name == 'Model':
+			return type.__new__(cls,name,bases,attrs)
+
+		if not hasattr(cls,'subclasses'):
+			cls.subclasses = {}
+		if not name in cls.subclasses:
+			cls.subclasses[name] = name
+		else:
+			logging.warning('Redefine class: %s' % name)
+
+		logging.info('Scan ORMapping %s...' % name)
+		mappings = dict()
+		primary_key = None
+		for k,v in attrs.iteritems():
+			if isinstance(v,Field):
+				if not v.name:
+					v.name = k
+				logging.info('[MAPPING] Found mapping: %s => %s' % (k,v))
+				if v.primary_key:
+					if primary_key:
+						raise TypeError('Cannot define more than 1 primary key in class: %s' % name)
+					if v.updatable:
+						logging.warning('NOTE:change primary key to non-nullable.')
+						v.nullable = False
+					primary_key = v
+				mappings[k] = v
+		if not primary_key:
+			raise TypeError('Primary key not defined in class: %s' % name)
+		for k in mappings.iterkeys():
+			attrs.pop(k)
+		if not '__table__' in attrs:
+			attrs['__table__'] = name.lower()
+		attrs['__mappings__'] = mappings
+		attrs['__primary_key__'] = primary_key
+		attrs['__sql__'] = lambda self:_gen_sql(attrs['__table__'],mappings)
+		for trigger in _triggers:
+			if not trigger in attrs:
+				attrs[trigger] = None
+		return type.__new__(cls,name,bases,attrs)
+
 class Model(dict):
 	"""
 	这是一个基类,用户在子类中定义映射关系,因此我们需要动态扫描子类属性
@@ -155,60 +209,6 @@ class Model(dict):
 		db.insert('%s' % self.__table__,**params)
 		return self
 
-class ModelMetaclass(type):
-	"""
-	对类对象动态完成以下操作
-	避免修改model类:
-		1.排除对model类的修改
-	属性与字段的mapping:
-		1.从类的属性字典中提出 类属性和字段类 的mapping
-		2.提取完成后移除这些类属性,避免和实例属性冲突
-		3.新增"__mappings__"属性,保存提取出的mapping数据
-	类和表的mapping:
-		1.提取类名,保存为表名,完成简单的类和表映射
-		2.新增"__table__"属性,保存提取出的表名
-	"""
-	def __new__(cls,name,bases,attrs):
-		if name == 'Model':
-			return type.__new__(cls,name,bases,attrs)
-
-		if not hasattr(cls,'subclasses'):
-			cls.subclasses = {}
-		if not name in cls.subclasses:
-			cls.subclasses[name] = name
-		else:
-			logging.warning('Redefine class: %s' % name)
-
-		logging.info('Scan ORMapping %s...' % name)
-		mappings = dict()
-		primary_key = None
-		for k,v in attrs.iteritems():
-			if isinstance(v,Field):
-				if not v.name:
-					v.name = k
-				logging.info('[MAPPING] Found mapping: %s => %s' % (k,v))
-				if v.primary_key:
-					if primary_key:
-						raise TypeError('Cannot define more than 1 primary key in class: %s' % name)
-					if v.updatable:
-						logging.warning('NOTE:change primary key to non-nullable.')
-						v.nullable = False
-					primary_key = v
-				mapping[k] = v
-		if not primary_key:
-			raise TypeError('Primary key not defined in class: %s' % name)
-		for k in mappings.iterkeys():
-			attrs.pop(k)
-		if not '__table__' in attrs:
-			attrs['__table__'] = name.lower()
-		attrs['__mappings__'] = mappings
-		attrs['__primary_key__'] = primary_key
-		attrs['__sql__'] = lambda self:_gen_sql(attrs['__table__'],mappings)
-		for trigger in _triggers:
-			if not trigger in attrs:
-				attrs[trigger] = None
-		return type.__new__(cls,name,bases,attrs)
-
 class Field(object):
 	"""
 	保存数据库中表的 字段属性
@@ -260,7 +260,6 @@ class StringField(Field):
 		if 'default' not in kw:
 			kw['default'] = ''
 		if 'ddl' not in kw:
-			kw['ddl'] not in kw:
 			kw['ddl'] = 'varchar(255)'
 		super(StringField, self).__init__(**kw)
 
@@ -272,7 +271,6 @@ class IntegerField(Field):
 		if 'default' not in kw:
 			kw['default'] = ''
 		if 'ddl' not in kw:
-			kw['ddl'] not in kw:
 			kw['ddl'] = 'bigint'
 		super(IntegerField, self).__init__(**kw)
 
