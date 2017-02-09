@@ -34,6 +34,8 @@ orm模块设计原因:
 import db
 import logging
 
+_triggers = frozenset(['pre_insert','pre_updata','pre_delete'])
+
 class Model(dict):
 	"""
 	这是一个基类,用户在子类中定义映射关系,因此我们需要动态扫描子类属性
@@ -154,6 +156,18 @@ class Model(dict):
 		return self
 
 class ModelMetaclass(type):
+	"""
+	对类对象动态完成以下操作
+	避免修改model类:
+		1.排除对model类的修改
+	属性与字段的mapping:
+		1.从类的属性字典中提出 类属性和字段类 的mapping
+		2.提取完成后移除这些类属性,避免和实例属性冲突
+		3.新增"__mappings__"属性,保存提取出的mapping数据
+	类和表的mapping:
+		1.提取类名,保存为表名,完成简单的类和表映射
+		2.新增"__table__"属性,保存提取出的表名
+	"""
 	def __new__(cls,name,bases,attrs):
 		if name == 'Model':
 			return type.__new__(cls,name,bases,attrs)
